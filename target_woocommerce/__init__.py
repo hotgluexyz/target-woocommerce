@@ -43,6 +43,8 @@ def parse_args():
 
 
 def initialize_woocommerce_client(config):
+    config['url'] = config.get('site_url')
+    config['version'] = "wc/v3"
     client = API(**config)
     return client
 
