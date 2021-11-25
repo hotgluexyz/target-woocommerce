@@ -11,7 +11,7 @@ setup(
     classifiers=['Programming Language :: Python :: 3 :: Only'],
     py_modules=['target_woocommerce'],
     install_requires=[
-        'argparse==1.4.0'
+        'argparse==1.4.0',
         'woocommerce==3.0.0'
     ],
     entry_points='''
