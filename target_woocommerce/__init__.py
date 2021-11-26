@@ -9,6 +9,10 @@ logger = logging.getLogger("target-WooCommerce")
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
 
 
+class InputError(Exception):
+    pass
+
+
 def load_json(path):
     with open(path) as f:
         return json.load(f)
@@ -73,13 +77,16 @@ def upload_products(client, input_path):
         if product.get("product_type") not in type_names:
             product_type = dict(name=product.get("product_type"))
             res = client.post("products/categories", product_type)
-            type_id = json.loads(res.text)['id']
+            type_id = json.loads(res.text).get('id')
         else:
             type_id = next(a.get("id") for a in products_types if a.get("name")==product.get("product_type"))
         
-        product_data["categories"] = [{"id": type_id}]
+        if type_id:
+            product_data["categories"] = [{"id": type_id}]
         res = client.post("products", product_data)
-        product_id = json.loads(res.text)['id']
+        if res.status_code==400:
+            raise InputError(json.loads(res.content).get("message"))
+        product_id = json.loads(res.text).get('id')
     
     # If type is variable
     if product_type == "variable":
@@ -103,6 +110,8 @@ def upload_products(client, input_path):
         # Update the product with the variants
         attribute_dict = {"attributes": attributes}
         res = client.put(f"products/{product_id}", attribute_dict)
+        if res.status_code==400:
+            raise InputError(json.loads(res.content).get("message"))
         
         # Insert the variants
         for variant in product['variants']:
@@ -115,7 +124,9 @@ def upload_products(client, input_path):
                 stock_quantity = variant.get('inventory_quantity'),
                 attributes = attributes
             )
-            client.post(f"products/{product_id}/variations", product_variation)
+            res = client.post(f"products/{product_id}/variations", product_variation)
+            if res.status_code==400:
+                raise json.loads(res.content).get("message")
 
 
 def upload(client, config):
@@ -123,10 +134,12 @@ def upload(client, config):
     input_path = f"{config['input_path']}/products.json"
     if os.path.exists(input_path):
         logger.info("Found products.json, uploading...")
-        products = upload_products(client, input_path)
-        logger.info("products.json uploaded!")
-
-    logger.info("Posting process has completed!")
+        try:
+            upload_products(client, input_path)
+            logger.info("products.json uploaded!")
+        except InputError as e:
+            logger.info(f"Upload Error: {e}")
+        logger.info("Posting process has completed!")
 
 
 def main():
