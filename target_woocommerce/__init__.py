@@ -72,6 +72,9 @@ def upload_products(client, input_path):
         )
 
         # Insert product in it's category
+        res = client.get("products/categories")
+        if res.status_code>=400:
+            raise InputError(json.loads(res.content).get("message"))
         products_types = client.get("products/categories").json()
         type_names = [p['name'] for p in products_types]
         if product.get("product_type") not in type_names:
@@ -84,7 +87,7 @@ def upload_products(client, input_path):
         if type_id:
             product_data["categories"] = [{"id": type_id}]
         res = client.post("products", product_data)
-        if res.status_code==400:
+        if res.status_code>=400:
             raise InputError(json.loads(res.content).get("message"))
         product_id = json.loads(res.text).get('id')
     
@@ -110,7 +113,7 @@ def upload_products(client, input_path):
         # Update the product with the variants
         attribute_dict = {"attributes": attributes}
         res = client.put(f"products/{product_id}", attribute_dict)
-        if res.status_code==400:
+        if res.status_code>=400:
             raise InputError(json.loads(res.content).get("message"))
         
         # Insert the variants
@@ -125,7 +128,7 @@ def upload_products(client, input_path):
                 attributes = attributes
             )
             res = client.post(f"products/{product_id}/variations", product_variation)
-            if res.status_code==400:
+            if res.status_code>=400:
                 raise json.loads(res.content).get("message")
 
 
@@ -138,7 +141,7 @@ def upload(client, config):
             upload_products(client, input_path)
             logger.info("products.json uploaded!")
         except InputError as e:
-            logger.info(f"Upload Error: {e}")
+            logger.error(f"Upload Error: {e}")
         logger.info("Posting process has completed!")
 
 
