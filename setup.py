@@ -4,7 +4,7 @@ from setuptools import setup
 
 setup(
     name='target-woocommerce',
-    version='1.0.4',
+    version='1.0.3',
     description='hotglue target for exporting data to woocommerce API',
     author='hotglue',
     url='https://hotglue.xyz',
