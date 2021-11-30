@@ -49,6 +49,7 @@ def parse_args():
 def initialize_woocommerce_client(config):
     config['url'] = config.get('site_url')
     config['version'] = "wc/v3"
+    config['timeout'] = 15
     client = API(**config)
     return client
 
@@ -59,11 +60,11 @@ def upload_products(client, input_path):
 
     for product in products:
         # Check if type is simple or variable
-        product_type = "variable" if product.get('variants') else "simple"
+        ptype = "variable" if product.get('variants') else "simple"
         product_data = dict(
             name = product.get('title'),
             description = product.get('body_html'),
-            type = product_type,
+            type = ptype,
             short_description = product.get('body_html'),
             images = product.get('images'),
             regular_price = product.get('price'),
@@ -72,7 +73,10 @@ def upload_products(client, input_path):
         )
 
         # Insert product in it's category
-        products_types = client.get("products/categories").json()
+        res = client.get("products/categories")
+        if res.status_code>=400:
+            raise InputError(json.loads(res.content).get("message"))
+        products_types = res.json()
         type_names = [p['name'] for p in products_types]
         if product.get("product_type") not in type_names:
             product_type = dict(name=product.get("product_type"))
@@ -80,53 +84,73 @@ def upload_products(client, input_path):
             type_id = json.loads(res.text).get('id')
         else:
             type_id = next(a.get("id") for a in products_types if a.get("name")==product.get("product_type"))
-        
         if type_id:
             product_data["categories"] = [{"id": type_id}]
+        
+        # Insert tags
+        res = client.get("products/tags")
+        if res.status_code>=400:
+            raise InputError(json.loads(res.content).get("message"))
+        products_tags = res.json()
+        tag_names = [p['name'] for p in products_tags]
+        p_tags = [t.strip() for t in product.get("tags").split(",")]
+        tags_id = []
+        for tag in p_tags:
+            if tag not in tag_names:
+                product_tag = dict(name=tag)
+                res = client.post("products/tags", product_tag)
+                tag_id = json.loads(res.text).get('id')
+            else:
+                tag_id = next(a.get("id") for a in products_tags if a.get("name")==tag)
+            if tag_id:
+                tags_id.append(tag_id)
+        if tags_id:
+            product_data["tags"] = [{"id": tag_id} for tag_id in tags_id]
+
         res = client.post("products", product_data)
-        if res.status_code==400:
+        if res.status_code>=400:
             raise InputError(json.loads(res.content).get("message"))
         product_id = json.loads(res.text).get('id')
     
-    # If type is variable
-    if product_type == "variable":
-        
-        # Create and insert the atributes into the product
-        mandatory_fields = ["sku", "price", "inventory_quantity", "title"]
-        variant_attributes = [k for v in product['variants'] for k in v.keys() if k not in mandatory_fields]
-        variant_attributes = list(set(variant_attributes))
-        
-        attributes = []
-        for attribute in variant_attributes:
-            options = [v.get(attribute) for v in product['variants']]
-            data = dict(
-                name=attribute,
-                position=0,
-                visible=False,
-                variation=True,
-                options=options
-            )
-            attributes.append(data)
-        # Update the product with the variants
-        attribute_dict = {"attributes": attributes}
-        res = client.put(f"products/{product_id}", attribute_dict)
-        if res.status_code==400:
-            raise InputError(json.loads(res.content).get("message"))
-        
-        # Insert the variants
-        for variant in product['variants']:
-            attributes = [{"name": a, "option": variant[a]} for a in variant_attributes]
-            product_variation = dict(
-                description = variant.get('title'),
-                regular_price = variant.get('price'),
-                sku = variant.get('sku'),
-                manage_stock = True,
-                stock_quantity = variant.get('inventory_quantity'),
-                attributes = attributes
-            )
-            res = client.post(f"products/{product_id}/variations", product_variation)
-            if res.status_code==400:
-                raise json.loads(res.content).get("message")
+        # If type is variable
+        if ptype == "variable":
+            
+            # Create and insert the atributes into the product
+            mandatory_fields = ["sku", "price", "inventory_quantity", "title"]
+            variant_attributes = [k for v in product['variants'] for k in v.keys() if k not in mandatory_fields]
+            variant_attributes = list(set(variant_attributes))
+            
+            attributes = []
+            for attribute in variant_attributes:
+                options = [v.get(attribute) for v in product['variants']]
+                data = dict(
+                    name=attribute,
+                    position=0,
+                    visible=False,
+                    variation=True,
+                    options=options
+                )
+                attributes.append(data)
+            # Update the product with the variants
+            attribute_dict = {"attributes": attributes}
+            res = client.put(f"products/{product_id}", attribute_dict)
+            if res.status_code>=400:
+                raise InputError(json.loads(res.content).get("message"))
+            
+            # Insert the variants
+            for variant in product['variants']:
+                attributes = [{"name": a, "option": variant[a]} for a in variant_attributes]
+                product_variation = dict(
+                    description = variant.get('title'),
+                    regular_price = variant.get('price'),
+                    sku = variant.get('sku'),
+                    manage_stock = True,
+                    stock_quantity = variant.get('inventory_quantity'),
+                    attributes = attributes
+                )
+                res = client.post(f"products/{product_id}/variations", product_variation)
+                if res.status_code>=400:
+                    raise InputError(json.loads(res.content).get("message"))
 
 
 def upload(client, config):
@@ -138,7 +162,7 @@ def upload(client, config):
             upload_products(client, input_path)
             logger.info("products.json uploaded!")
         except InputError as e:
-            logger.info(f"Upload Error: {e}")
+            logger.error(f"Upload Error: {e}")
         logger.info("Posting process has completed!")
 
 
