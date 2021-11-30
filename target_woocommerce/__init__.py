@@ -93,16 +93,20 @@ def upload_products(client, input_path):
             raise InputError(json.loads(res.content).get("message"))
         products_tags = res.json()
         tag_names = [p['name'] for p in products_tags]
-        if product.get("tags").strip() not in tag_names:
-            product_tag = dict(name=product.get("tags"))
-            res = client.post("products/tags", product_tag)
-            tag_id = json.loads(res.text).get('id')
-        else:
-            tag_id = next(a.get("id") for a in products_tags if a.get("name")==product.get("tags").strip())
-        if tag_id:
-            product_data["tags"] = [{"id": tag_id}]
-        
-        
+        p_tags = [t.strip() for t in product.get("tags").split(",")]
+        tags_id = []
+        for tag in p_tags:
+            if tag not in tag_names:
+                product_tag = dict(name=tag)
+                res = client.post("products/tags", product_tag)
+                tag_id = json.loads(res.text).get('id')
+            else:
+                tag_id = next(a.get("id") for a in products_tags if a.get("name")==tag)
+            if tag_id:
+                tags_id.append(tag_id)
+        if tags_id:
+            product_data["tags"] = [{"id": tag_id} for tag_id in tags_id]
+
         res = client.post("products", product_data)
         if res.status_code>=400:
             raise InputError(json.loads(res.content).get("message"))
