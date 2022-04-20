@@ -46,6 +46,14 @@ def parse_args():
     return args
 
 
+def check_product_sku(client, sku):
+    response = client.get("products", params={"sku": sku})
+    response = response.json()
+    if response:
+        return response[0].get("id")
+    return None
+
+
 def initialize_woocommerce_client(config):
     config['url'] = config.get('site_url')
     config['version'] = "wc/v3"
@@ -75,7 +83,7 @@ def upload_products(client, input_path):
         # Insert product in it's category
         res = client.get("products/categories")
         if res.status_code>=400:
-            raise InputError(json.loads(res.content).get("message"))
+            raise InputError(res.json().get("message"))
         products_types = res.json()
         type_names = [p['name'] for p in products_types]
         if product.get("product_type") not in type_names:
@@ -90,7 +98,7 @@ def upload_products(client, input_path):
         # Insert tags
         res = client.get("products/tags")
         if res.status_code>=400:
-            raise InputError(json.loads(res.content).get("message"))
+            raise InputError(res.json().get("message"))
         products_tags = res.json()
         tag_names = [p['name'] for p in products_tags]
         p_tags = [t.strip() for t in product.get("tags").split(",")]
@@ -107,10 +115,18 @@ def upload_products(client, input_path):
         if tags_id:
             product_data["tags"] = [{"id": tag_id} for tag_id in tags_id]
 
-        res = client.post("products", product_data)
-        if res.status_code>=400:
-            raise InputError(json.loads(res.content).get("message"))
-        product_id = json.loads(res.text).get('id')
+        product_id = check_product_sku(client, product.get('sku'))
+
+        if product_id:
+            res = client.put(f"products/{product_id}", product_data)
+            if res.status_code>=400:
+                raise InputError(res.json().get("message"))
+            product_id = json.loads(res.text).get('id')
+        else:
+            res = client.post("products", product_data)
+            if res.status_code>=400:
+                raise InputError(res.json().get("message"))
+            product_id = json.loads(res.text).get('id')
     
         # If type is variable
         if ptype == "variable":
@@ -135,7 +151,7 @@ def upload_products(client, input_path):
             attribute_dict = {"attributes": attributes}
             res = client.put(f"products/{product_id}", attribute_dict)
             if res.status_code>=400:
-                raise InputError(json.loads(res.content).get("message"))
+                raise InputError(res.json().get("message"))
             
             # Insert the variants
             for variant in product['variants']:
@@ -150,7 +166,7 @@ def upload_products(client, input_path):
                 )
                 res = client.post(f"products/{product_id}/variations", product_variation)
                 if res.status_code>=400:
-                    raise InputError(json.loads(res.content).get("message"))
+                    raise InputError(res.json().get("message"))
 
 
 def upload(client, config):
